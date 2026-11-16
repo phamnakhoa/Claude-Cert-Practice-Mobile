@@ -203,8 +203,9 @@ button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .back{width:36px;height:36px}
 .brand b,.brand small{display:none}
 .brand .badge{min-width:38px;height:36px}
+.cert-card{cursor:pointer}
 .seg{margin-left:auto}
-.seg button{padding:7px 14px}
+.seg button{padding:6px 11px;font-size:13px}
 .spacer{display:none}
 .actions{order:5;width:100%;flex-wrap:nowrap;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
 .actions::-webkit-scrollbar{display:none}
@@ -274,7 +275,9 @@ const CERTS = [
   {id:'ccao', code:'CCAO-F', name:'Claude Certified Associate',  sub:'Foundations', accent:'#0d9488', desc:'Kiến thức nền tảng về Claude, cách dùng hiệu quả và các khái niệm cốt lõi.'},
   {id:'ccdf', code:'CCD-F',  name:'Claude Certified Developer',  sub:'Foundations', accent:'#ea580c', desc:'Phát triển ứng dụng, agent và workflow tích hợp Claude.'}
 ];
-const EXAM_SIZE = 50, PASS_MARK = 40;
+const MINI_EXAM_SIZE = 20, MINI_PASS_MARK = 16;
+const FULL_EXAM_SIZE = 50, FULL_PASS_MARK = 40;
+const EXAM_SIZE = FULL_EXAM_SIZE, PASS_MARK = FULL_PASS_MARK;
 const certById = id => CERTS.find(c => c.id === id);
 const BY_ID = {};
 for (const c of CERTS){ BY_ID[c.id] = {}; for (const q of DATA[c.id].qs) BY_ID[c.id][q.id] = q; }
@@ -314,16 +317,22 @@ function loadLearn(c){
   return {shuffle:false, order:ids, idx:0, ans:{}, checked:{}};
 }
 const saveLearn = () => LS.set(KEY(route.cert,'learn'), LRN);
-function loadExam(c){
-  const s = LS.get(KEY(c,'exam'));
+
+const currentExamKey = (mode = route.mode) => (mode === 'mini') ? 'mini' : 'exam';
+function loadExam(c, mode = route.mode){
+  const k = currentExamKey(mode);
+  const s = LS.get(KEY(c, k));
   if (s && s.phase && (s.phase==='intro' || (Array.isArray(s.ids) && s.ids.every(i => BY_ID[c][i])))) return s;
-  return {phase:'intro'};
+  return {phase:'intro', isMini: mode === 'mini'};
 }
-const saveExam = () => LS.set(KEY(route.cert,'exam'), EXM);
+const saveExam = () => {
+  const k = currentExamKey(route.mode || (EXM?.isMini ? 'mini' : 'exam'));
+  LS.set(KEY(route.cert, k), EXM);
+};
 
 /* ---------- routing ---------- */
 function parseHash(){
-  const m = location.hash.match(/^#\/(\w+)(?:\/(learn|exam))?/);
+  const m = location.hash.match(/^#\/(\w+)(?:\/(learn|exam|mini))?/);
   if (m && certById(m[1])) return {cert:m[1], mode:m[2]||'learn'};
   return {cert:null, mode:null};
 }
@@ -355,19 +364,31 @@ function renderHome(){
   $('#app').innerHTML = `<div class="home">
     <span class="eyebrow">Practice • Offline</span>
     <h1>Luyện thi <span>Claude Certification</span></h1>
-    <p class="lead">Chọn một chứng chỉ để bắt đầu. Học từng câu với giải thích chi tiết, hoặc làm bài thi thử ngẫu nhiên ${EXAM_SIZE} câu.</p>
+    <p class="lead">Chọn một chứng chỉ để bắt đầu. Học từng câu với giải thích chi tiết, luyện nhanh với bài thi <b>Mini Practice 20 câu</b>, hoặc làm bài <b>Thi thử 50 câu</b> chuẩn format.</p>
     <div class="cards">${CERTS.map(c => {
       const n = DATA[c.id].qs.length, ls = LS.get(KEY(c.id,'learn'));
       const done = ls && ls.checked ? Object.keys(ls.checked).length : 0;
       const pct = Math.round(done/n*100);
-      return `<button class="cert-card" style="--accent:${c.accent}" data-cert="${c.id}">
+      return `<div class="cert-card" style="--accent:${c.accent}" data-cert="${c.id}">
         <div class="badge">${c.code}</div>
         <div><h2>${c.name}</h2></div><div class="sub">${c.sub}</div>
         <div class="desc">${c.desc}</div>
         <div><div class="bar"><i style="width:${pct}%"></i></div></div>
-        <div class="meta"><span><b>${n}</b> câu hỏi${done?` • đã học <b>${done}</b>`:''}</span><span class="go">Bắt đầu ${ic('arrowR')}</span></div>
-      </button>`;}).join('')}</div></div>`;
-  $('#app').querySelectorAll('[data-cert]').forEach(b => b.onclick = () => go(`#/${b.dataset.cert}/learn`));
+        <div class="meta"><span><b>${n}</b> câu hỏi${done?` • đã học <b>${done}</b>`:''}</span><span class="go">Chọn chế độ ${ic('arrowR')}</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px">
+          <button class="btn" data-nav="#/${c.id}/learn" style="flex:1" title="Học câu hỏi kèm lời giải">${ic('book')}Học</button>
+          <button class="btn" data-nav="#/${c.id}/mini" style="flex:1.1;border-color:var(--accent);color:var(--accent);font-weight:700" title="Thi nhanh 20 câu ngẫu nhiên">${ic('play')}Mini 20c</button>
+          <button class="btn primary" data-nav="#/${c.id}/exam" style="flex:1.1;background:var(--accent);border-color:var(--accent)" title="Thi thử chuẩn 50 câu">${ic('play')}Thi 50c</button>
+        </div>
+      </div>`;}).join('')}</div></div>`;
+  $('#app').querySelectorAll('[data-nav]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    go(b.dataset.nav);
+  });
+  $('#app').querySelectorAll('.cert-card').forEach(card => card.onclick = (e) => {
+    if (e.target.closest('[data-nav]')) return;
+    go(`#/${card.dataset.cert}/learn`);
+  });
 }
 
 /* ---------- Shared pieces ---------- */
@@ -378,7 +399,8 @@ function topbar(c, actionsHtml){
       <div><b>${c.name}</b><small>${c.sub} • ${DATA[c.id].qs.length} câu</small></div></div>
     <div class="seg" style="--accent:${c.accent}">
       <button data-mode="learn" class="${route.mode==='learn'?'on':''}">Học</button>
-      <button data-mode="exam" class="${route.mode==='exam'?'on':''}">Thi</button></div>
+      <button data-mode="mini" class="${route.mode==='mini'?'on':''}" title="Mini Practice 20 câu ngẫu nhiên">Mini 20c</button>
+      <button data-mode="exam" class="${route.mode==='exam'?'on':''}" title="Thi thử đầy đủ 50 câu">Thi 50c</button></div>
     <div class="spacer"></div>
     <div class="actions">${actionsHtml||''}</div></div></header>`;
 }
@@ -569,8 +591,11 @@ function paintExam(){
   $('#map-slot').innerHTML = mapHTML(items, EXM.idx);
   const ans = exAnswered();
   $('#side-count').textContent = `${ans}/${n}`;
+  const isMini = !!EXM.isMini || n === MINI_EXAM_SIZE || route.mode === 'mini';
   $('#main-slot').innerHTML = `
-    <div class="stats"><span class="chip"><i style="background:var(--ok)"></i>Đã làm ${ans}</span>
+    <div class="stats">
+      <span class="chip" style="font-weight:700;color:var(--accent)">${isMini ? '⚡ Mini 20c' : '🎯 Thi 50c'}</span>
+      <span class="chip"><i style="background:var(--ok)"></i>Đã làm ${ans}</span>
       <span class="chip"><i style="background:var(--gray-ink)"></i>Chưa làm ${n-ans}</span></div>
     <div class="progress"><i style="width:${ans/n*100}%"></i></div>
     <section class="panel qcard">
@@ -591,11 +616,16 @@ function paintExam(){
 function examGo(i){ if (i<0||i>=EXM.ids.length) return; EXM.idx=i; saveExam(); paintExam(); window.scrollTo({top:0,behavior:'smooth'}); }
 function startRetryExam(){
   if (!EXM.wrong || !EXM.wrong.length) return;
-  EXM = {phase:'run', ids: shuffle(EXM.wrong), ans:{}, idx:0, start:Date.now(), practice:true};
+  const isMini = !!EXM.isMini || EXM.ids.length <= MINI_EXAM_SIZE;
+  const passMark = EXM.passMark || (isMini ? MINI_PASS_MARK : FULL_PASS_MARK);
+  EXM = {phase:'run', ids: shuffle(EXM.wrong), ans:{}, idx:0, start:Date.now(), practice:true, isMini, passMark};
   showWrong = false; saveExam(); renderExam(); window.scrollTo(0,0);
 }
-function startExam(){
-  EXM = {phase:'run', ids: shuffle(ALL_IDS(route.cert)).slice(0, EXAM_SIZE), ans:{}, idx:0, start:Date.now()};
+function startExam(customSize){
+  const isMini = customSize ? (customSize === MINI_EXAM_SIZE) : (route.mode === 'mini');
+  const size = isMini ? MINI_EXAM_SIZE : FULL_EXAM_SIZE;
+  const passMark = isMini ? MINI_PASS_MARK : FULL_PASS_MARK;
+  EXM = {phase:'run', isMini, passMark, ids: shuffle(ALL_IDS(route.cert)).slice(0, size), ans:{}, idx:0, start:Date.now()};
   showWrong = false; saveExam(); renderExam(); window.scrollTo(0,0);
 }
 async function submitExam(){
@@ -609,22 +639,37 @@ async function submitExam(){
   showWrong = false; saveExam(); renderExam(); window.scrollTo(0,0);
 }
 function renderExamIntro(c){
+  const isMini = route.mode === 'mini';
+  const size = isMini ? MINI_EXAM_SIZE : FULL_EXAM_SIZE;
+  const passMark = isMini ? MINI_PASS_MARK : FULL_PASS_MARK;
   $('#app').innerHTML = topbar(c, '') + `<div class="layout single" style="--accent:${c.accent}"><main class="main">
     <section class="panel hero">
       <div class="badge" style="background:${c.accent}">${c.code}</div>
-      <h2>Thi thử ${c.name}</h2>
-      <p>Hệ thống chọn ngẫu nhiên ${EXAM_SIZE} câu từ ngân hàng ${DATA[c.id].qs.length} câu. Bạn có thể làm câu bất kỳ qua bảng bên trái và nộp bài khi sẵn sàng.</p>
-      <div class="rules">
-        <div class="rule" style="--accent:${c.accent}"><b>${EXAM_SIZE}</b><span>câu hỏi ngẫu nhiên</span></div>
-        <div class="rule" style="--accent:${c.accent}"><b>≥ ${PASS_MARK}</b><span>câu đúng để Passed</span></div>
-        <div class="rule" style="--accent:${c.accent}"><b>${Math.round(PASS_MARK/EXAM_SIZE*100)}%</b><span>điểm đạt</span></div>
+      <h2>${isMini ? 'Mini Practice' : 'Thi thử'} ${c.name}</h2>
+      <div style="display:inline-flex;background:var(--surface-2);padding:4px;border-radius:13px;gap:4px;margin:2px 0 8px;max-width:100%;flex-wrap:wrap;justify-content:center">
+        <button class="btn ${isMini?'primary':''}" id="tab-mini" style="padding:7px 14px;border-radius:10px;font-size:13px;${isMini?`background:${c.accent};border-color:${c.accent}`:''}">⚡ Mini Practice (20 câu)</button>
+        <button class="btn ${!isMini?'primary':''}" id="tab-full" style="padding:7px 14px;border-radius:10px;font-size:13px;${!isMini?`background:${c.accent};border-color:${c.accent}`:''}">🎯 Thi chuẩn (50 câu)</button>
       </div>
-      <button class="btn primary lg" id="btn-start" style="background:${c.accent};border-color:${c.accent}">${ic('play')}Bắt đầu thi</button>
+      <p>${isMini
+        ? `Hệ thống chọn ngẫu nhiên <b>20 câu</b> từ ngân hàng ${DATA[c.id].qs.length} câu. Thích hợp để ôn tập nhanh, kiểm tra mức độ nắm kiến thức trong khoảng 15–20 phút.`
+        : `Hệ thống chọn ngẫu nhiên <b>50 câu</b> từ ngân hàng ${DATA[c.id].qs.length} câu mô phỏng đề thi thực tế. Bạn có thể làm câu bất kỳ qua bảng câu hỏi và nộp bài khi sẵn sàng.`}</p>
+      <div class="rules">
+        <div class="rule" style="--accent:${c.accent}"><b>${size}</b><span>câu hỏi ngẫu nhiên</span></div>
+        <div class="rule" style="--accent:${c.accent}"><b>≥ ${passMark}</b><span>câu đúng để Passed</span></div>
+        <div class="rule" style="--accent:${c.accent}"><b>${Math.round(passMark/size*100)}%</b><span>điểm đạt</span></div>
+      </div>
+      <button class="btn primary lg" id="btn-start" style="background:${c.accent};border-color:${c.accent};width:100%;max-width:320px">${ic('play')}Bắt đầu ${isMini ? 'Mini Practice (20 câu)' : 'thi thử (50 câu)'}</button>
     </section></main></div>`;
-  bindTop(); $('#btn-start').onclick = startExam;
+  bindTop();
+  $('#tab-mini').onclick = () => go(`#/${c.id}/mini`);
+  $('#tab-full').onclick = () => go(`#/${c.id}/exam`);
+  $('#btn-start').onclick = () => startExam(isMini ? MINI_EXAM_SIZE : FULL_EXAM_SIZE);
 }
 function renderExamResult(c){
-  const n = EXM.ids.length, correct = EXM.correct, practice = !!EXM.practice, passed = practice ? correct === n : correct >= PASS_MARK;
+  const n = EXM.ids.length, correct = EXM.correct, practice = !!EXM.practice;
+  const isMini = !!EXM.isMini || n === MINI_EXAM_SIZE || route.mode === 'mini';
+  const passMark = EXM.passMark || (isMini ? MINI_PASS_MARK : FULL_PASS_MARK);
+  const passed = practice ? correct === n : correct >= passMark;
   const wrongIds = EXM.wrong, un = EXM.ids.filter(id => !exSel(id).length).length;
   const pct = correct/n, R = 76, C = 2*Math.PI*R;
   const items = EXM.ids.map(id => ({m: BY_ID[c.id][id].m, cls: wrongIds.includes(id)?'bad':'done'}));
@@ -641,14 +686,15 @@ function renderExamResult(c){
           <div class="c"><b>${correct}/${n}</b><span>${Math.round(pct*100)}% đúng</span></div></div>
         <div>
           <div class="verdict ${passed?'pass':'fail'}">${practice?(passed?'Hoàn hảo!':'Cố lên!'):(passed?'Passed':'Failed')}</div>
-          <p class="sub">${practice?(passed?'Bạn đã làm đúng tất cả các câu từng sai.':`Còn ${n-correct} câu chưa đúng — hãy xem lại và làm lại tiếp.`)+' (Lượt làm lại câu sai, không tính Passed/Failed.)':passed?`Chúc mừng! Bạn đạt từ ${PASS_MARK}/${n} câu đúng trở lên.`:`Chưa đạt. Cần tối thiểu ${PASS_MARK}/${n} câu đúng — bạn còn thiếu ${PASS_MARK-correct} câu.`}</p>
+          <p class="sub">${practice?(passed?'Bạn đã làm đúng tất cả các câu từng sai.':`Còn ${n-correct} câu chưa đúng — hãy xem lại và làm lại tiếp.`)+' (Lượt làm lại câu sai, không tính Passed/Failed.)':passed?`Chúc mừng! Bạn đạt từ ${passMark}/${n} câu đúng trở lên (${Math.round(pct*100)}%).`:`Chưa đạt. Cần tối thiểu ${passMark}/${n} câu đúng (${Math.round(passMark/n*100)}%) — bạn còn thiếu ${passMark-correct} câu.`}</p>
           <div class="kpis"><div class="kpi"><b style="color:var(--ok)">${correct}</b><span>Câu đúng</span></div>
             <div class="kpi"><b style="color:var(--bad)">${n-correct}</b><span>Câu sai${un?` (${un} bỏ trống)`:''}</span></div>
             <div class="kpi"><b>${fmtTime((EXM.end-EXM.start)/1000)}</b><span>Thời gian</span></div></div>
           <div class="actions">
-            <button class="btn" id="btn-wrong" ${wrongIds.length?'':'disabled'}>${ic('list')}<span>${showWrong?'Ẩn các câu sai':`Xem các câu sai (${wrongIds.length})`}</span></button>
+            <button class="btn" id="btn-wrong" ${wrongIds.length?'':'disabled'}>${ic('list')}<span>${showWrong?'Ẩn các câu sai':`Xem câu sai (${wrongIds.length})`}</span></button>
             <button class="btn" id="btn-retrywrong" ${wrongIds.length?'':'disabled'}>${ic('reset')}<span>Làm lại câu sai</span></button>
-            <button class="btn primary" id="btn-retake" style="background:${c.accent};border-color:${c.accent}">${ic('reset')}Thi lại</button></div>
+            <button class="btn primary" id="btn-retake" style="background:${c.accent};border-color:${c.accent}">${ic('reset')}Làm đề mới (${n}c)</button>
+            <button class="btn" id="btn-switch-mode">${isMini ? '🎯 Thi 50 câu' : '⚡ Mini 20 câu'}</button></div>
         </div>
       </section>
       ${showWrong ? `<section class="review"><h3>Các câu làm sai (${wrongIds.length})</h3>${wrongIds.map(id => {
@@ -661,8 +707,9 @@ function renderExamResult(c){
     </main></div>`;
   bindTop();
   $('#btn-wrong').onclick = () => { showWrong = !showWrong; renderExamResult(c); if (showWrong) $('.review')?.scrollIntoView({behavior:'smooth',block:'start'}); };
-  $('#btn-retake').onclick = startExam;
+  $('#btn-retake').onclick = () => startExam(isMini ? MINI_EXAM_SIZE : FULL_EXAM_SIZE);
   $('#btn-retrywrong').onclick = startRetryExam;
+  $('#btn-switch-mode').onclick = () => go(`#/${c.id}/${isMini ? 'exam' : 'mini'}`);
   document.querySelectorAll('#map-slot [data-go]').forEach(b => b.onclick = () => {
     const num = +b.dataset.go + 1, id = EXM.ids[num-1];
     if (!wrongIds.includes(id)) return;
@@ -680,7 +727,7 @@ document.addEventListener('keydown', e => {
     else if (e.key==='ArrowLeft') learnGo(LRN.idx-1);
     else if (e.key==='Enter'){ e.preventDefault(); checked ? learnGo(LRN.idx+1) : learnCheck(); }
     else if (/^[1-9]$/.test(e.key) && !checked && q.o[+e.key-1]){ LRN.ans[id] = toggleSel(q, LRN.ans[id]||[], q.o[+e.key-1].k); saveLearn(); paintLearn(); }
-  } else if (route.mode==='exam' && EXM && EXM.phase==='run'){
+  } else if ((route.mode==='exam' || route.mode==='mini') && EXM && EXM.phase==='run'){
     const id = EXM.ids[EXM.idx], q = BY_ID[route.cert][id];
     if (e.key==='ArrowRight') examGo(EXM.idx+1);
     else if (e.key==='ArrowLeft') examGo(EXM.idx-1);
@@ -694,9 +741,10 @@ function render(){
   const r = parseHash(); route = r;
   if (!r.cert){ LRN = EXM = null; return renderHome(); }
   const c = certById(r.cert);
-  document.title = `${c.code} • ${r.mode==='exam'?'Thi':'Học'} • Claude Cert Practice`;
+  const modeTitle = r.mode === 'learn' ? 'Học' : r.mode === 'mini' ? 'Mini Practice' : 'Thi';
+  document.title = `${c.code} • ${modeTitle} • Claude Cert Practice`;
   if (r.mode === 'learn'){ LRN = loadLearn(r.cert); renderLearn(); }
-  else { EXM = loadExam(r.cert); showWrong = false; renderExam(); }
+  else { EXM = loadExam(r.cert, r.mode); showWrong = false; renderExam(); }
 }
 render();
 
