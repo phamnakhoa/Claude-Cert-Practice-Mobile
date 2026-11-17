@@ -408,6 +408,16 @@ function bindTop(){
   $('#btn-home').onclick = () => go('#/');
   document.querySelectorAll('.seg [data-mode]').forEach(b => b.onclick = () => go(`#/${route.cert}/${b.dataset.mode}`));
 }
+function optOrder(q){
+  const S = route.mode === 'learn' ? LRN : EXM;
+  const idx = q.o.map((_,i)=>i);
+  if (!S) return idx;
+  S.perm = S.perm || {};
+  const p = S.perm[q.id];
+  if (!p || p.length !== idx.length) S.perm[q.id] = shuffle(idx);
+  return S.perm[q.id];
+}
+const optsOf = q => optOrder(q).map(i => q.o[i]);
 function questionHTML(q, num, o){
   // o: {selected[], checked, mode:'learn'|'exam'|'review', showResult}
   const multi = q.m > 1, sel = o.selected || [];
@@ -415,7 +425,9 @@ function questionHTML(q, num, o){
   const lang = (o.mode==='learn' && q.v) ? (peekId===q.id ? 'both' : LANG) : 'en';
   const peekBtn = (o.mode==='learn' && q.v && LANG!=='both') ? `<button class="peek ${peekId===q.id?'on':''}" id="btn-peek" type="button">${peekId===q.id?'Ẩn bản dịch':'EN+VI'}</button>` : '';
   const txt = (en, vi) => lang==='vi' ? vi : lang==='both' ? `${vi}<div class="en">${en}</div>` : en;
-  const opts = q.o.map((op,i) => {
+  const order = optOrder(q);
+  const opts = order.map((oi,i) => {
+    const op = q.o[oi];
     let cls = 'opt';
     if (o.showResult){
       const isC = q.a.includes(op.k), isS = sel.includes(op.k);
@@ -423,7 +435,7 @@ function questionHTML(q, num, o){
     } else if (sel.includes(op.k)) cls += ' sel';
     const mark = o.showResult ? (q.a.includes(op.k) ? ic('check') : (sel.includes(op.k) ? '✕' : L(i))) : L(i);
     return `<button class="${cls}" data-opt="${esc(op.k)}" ${lock?'disabled':''} aria-pressed="${sel.includes(op.k)}">
-      <span class="mark">${mark}</span><span class="t rich">${txt(op.h, q.v ? q.v.o[i] : op.h)}</span></button>`;
+      <span class="mark">${mark}</span><span class="t rich">${txt(op.h, q.v ? q.v.o[oi] : op.h)}</span></button>`;
   }).join('');
   return `<div class="qhead"><span class="qnum">Câu ${num}</span>${multi?`<span class="tag">Chọn ${q.m} đáp án</span>`:'<span>Chọn 1 đáp án</span>'}${peekBtn}</div>
     <div class="qtext rich">${txt(q.q, q.v ? q.v.q : q.q)}</div>
@@ -431,7 +443,7 @@ function questionHTML(q, num, o){
 }
 function feedbackHTML(q, sel){
   const ok = same(sel, q.a);
-  const letters = q.a.map(k => L(q.o.findIndex(o => o.k===k))).sort().join(', ');
+  const letters = q.a.map(k => L(optsOf(q).findIndex(o => o.k===k))).sort().join(', ');
   const none = !sel.length && REVEAL;
   return `<div class="feedback ${none?'info':ok?'ok':'ko'}"><h4>${none?'💡 Đáp án':ok?'✔ Chính xác!':'✘ Chưa đúng'}</h4>
     <div class="ans">Đáp án đúng: <b>${letters}</b></div>
@@ -538,17 +550,17 @@ function setOrder(rnd){
   LRN.retry = false; delete LRN.fullOrder;
   LRN.shuffle = rnd;
   LRN.order = rnd ? shuffle(ALL_IDS(route.cert)) : ALL_IDS(route.cert);
-  LRN.idx = 0; saveLearn(); renderLearn();
+  LRN.idx = 0; LRN.perm = {}; saveLearn(); renderLearn();
 }
 function reshuffleLearn(){
   LRN.retry = false; delete LRN.fullOrder;
-  LRN.shuffle = true; LRN.order = shuffle(ALL_IDS(route.cert)); LRN.idx = 0; saveLearn(); renderLearn();
+  LRN.shuffle = true; LRN.order = shuffle(ALL_IDS(route.cert)); LRN.idx = 0; LRN.perm = {}; saveLearn(); renderLearn();
 }
 function retryWrong(){
   const wrong = LRN.order.filter(id => LRN.checked[id] && !same(LRN.ans[id]||[], BY_ID[route.cert][id].a));
   if (!wrong.length) return;
   if (!LRN.retry) LRN.fullOrder = LRN.order.slice();
-  for (const id of wrong){ delete LRN.ans[id]; delete LRN.checked[id]; }
+  for (const id of wrong){ delete LRN.ans[id]; delete LRN.checked[id]; if (LRN.perm) delete LRN.perm[id]; }
   LRN.retry = true; LRN.order = wrong; LRN.idx = 0; saveLearn(); renderLearn(); window.scrollTo(0,0);
 }
 function exitRetry(){
@@ -701,7 +713,7 @@ function renderExamResult(c){
         const q = BY_ID[c.id][id], sel = exSel(id), num = EXM.ids.indexOf(id)+1;
         return `<div class="rv" id="rv-${num}"><div class="panel qcard">
           ${questionHTML(q, num, {selected:sel, mode:'review', showResult:true}).replace('qhead">', `qhead">${sel.length?'':'<span class="tag un">Chưa trả lời</span>'}`)}
-          <div class="hint">${sel.length ? 'Bạn chọn: <b style="color:var(--bad)">'+sel.map(k=>L(q.o.findIndex(o=>o.k===k))).sort().join(', ')+'</b> • ' : ''}Đáp án đúng: <b style="color:var(--ok)">${q.a.map(k=>L(q.o.findIndex(o=>o.k===k))).sort().join(', ')}</b></div>
+          <div class="hint">${sel.length ? 'Bạn chọn: <b style="color:var(--bad)">'+sel.map(k=>L(optsOf(q).findIndex(o=>o.k===k))).sort().join(', ')+'</b> • ' : ''}Đáp án đúng: <b style="color:var(--ok)">${q.a.map(k=>L(optsOf(q).findIndex(o=>o.k===k))).sort().join(', ')}</b></div>
           ${q.e?`<div class="feedback ko" style="background:var(--surface-2);border-color:var(--line)"><div class="why rich"><b>Giải thích:</b> ${q.e}</div></div>`:''}
         </div></div>`; }).join('')}</section>` : ''}
     </main></div>`;
@@ -726,12 +738,12 @@ document.addEventListener('keydown', e => {
     if (e.key==='ArrowRight') learnGo(LRN.idx+1);
     else if (e.key==='ArrowLeft') learnGo(LRN.idx-1);
     else if (e.key==='Enter'){ e.preventDefault(); checked ? learnGo(LRN.idx+1) : learnCheck(); }
-    else if (/^[1-9]$/.test(e.key) && !checked && q.o[+e.key-1]){ LRN.ans[id] = toggleSel(q, LRN.ans[id]||[], q.o[+e.key-1].k); saveLearn(); paintLearn(); }
+    else if (/^[1-9]$/.test(e.key) && !checked && optsOf(q)[+e.key-1]){ LRN.ans[id] = toggleSel(q, LRN.ans[id]||[], optsOf(q)[+e.key-1].k); saveLearn(); paintLearn(); }
   } else if ((route.mode==='exam' || route.mode==='mini') && EXM && EXM.phase==='run'){
     const id = EXM.ids[EXM.idx], q = BY_ID[route.cert][id];
     if (e.key==='ArrowRight') examGo(EXM.idx+1);
     else if (e.key==='ArrowLeft') examGo(EXM.idx-1);
-    else if (/^[1-9]$/.test(e.key) && q.o[+e.key-1]){ EXM.ans[id] = toggleSel(q, exSel(id), q.o[+e.key-1].k); saveExam(); paintExam(); }
+    else if (/^[1-9]$/.test(e.key) && optsOf(q)[+e.key-1]){ EXM.ans[id] = toggleSel(q, exSel(id), optsOf(q)[+e.key-1].k); saveExam(); paintExam(); }
   }
 });
 
